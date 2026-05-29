@@ -1,0 +1,46 @@
+<div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px; background: #f9fafb;">
+    <div style="background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+        <h2 style="color: #111827; margin: 0 0 16px 0;">⏰ Interview Starts in 1 Hour!</h2>
+        <p>Hi {{name}},</p>
+
+        {{#if isRecruiter}}
+        <p>Your interview with <strong>{{studentName}}</strong> for <strong>{{jobTitle}}</strong> starts soon.</p>
+        {{else}}
+        <p>Your interview for <strong>{{jobTitle}}</strong> at <strong>{{companyName}}</strong> starts in 1 hour.</p>
+        {{/if}}
+
+        <div
+            style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 16px; margin: 20px 0; border-radius: 0 6px 6px 0;">
+            <p><strong>🕗 Time:</strong> {{time}}</p>
+            <p><strong>📍 Type:</strong> {{interviewType}}</p>
+            {{#if videoLink}}
+            <p><strong>🔗 Join Now:</strong> <a href="{{videoLink}}" style="color: #ef4444;">{{videoLink}}</a></p>
+            {{/if}}
+            {{#if phoneNumber}}
+            <p><strong>📞 Call at:</strong> {{phoneNumber}}</p>
+            {{/if}}
+            {{#if officeAddress}}
+            <p><strong>🏢 Address:</strong> {{officeAddress}}</p>
+            {{/if}}
+        </div>
+
+        <p>
+            {{#if isRecruiter}}
+            <a href="{{frontendUrl}}/dashboard/applications/{{applicationId}}"
+                style="background: #ef4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
+                Go to Application
+            </a>
+            {{else}}
+            <a href="{{frontendUrl}}/applications/{{applicationId}}"
+                style="background: #ef4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
+                View Details & Join
+            </a>
+            {{/if}}
+        </p>
+
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
+        <p style="font-size: 12px; color: #6b7280;">
+            Good luck! 🍀
+        </p>
+    </div>
+</div>

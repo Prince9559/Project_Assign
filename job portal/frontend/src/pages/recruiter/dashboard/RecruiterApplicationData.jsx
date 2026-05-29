@@ -1,0 +1,98 @@
+import React, { useState } from "react";
+import { Search } from "lucide-react";
+import { useApplications } from "../../../hooks/useApplications"; 
+import { useNavigate } from "react-router-dom";
+
+const ApplicationsSmall = ({ job_id }) => {
+  const [search, setSearch] = useState("");
+  const navigate = useNavigate();
+
+  // use hook with job_id from prop
+  const { applications, loading, error } = useApplications(job_id);
+
+  // filter apps by name search
+  const filteredApps = applications.filter((app) =>
+    app.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="flex items-start justify-center min-h-screen px-2 bg-gray-100 lg:px-8">
+      {/* Left Spacer */}
+      <div className="flex-grow hidden lg:block"></div>
+
+      {/* Applications Box */}
+      <div className="bg-white rounded-lg shadow-md w-[447px] h-[627px] mt-2 py-5 px-2 flex flex-col gap-[30px]">
+        {/* Title */}
+        <div>
+          <h1 className="text-2xl font-bold">Applications</h1>
+        </div>
+
+        {/* Search Bar — styled to match old design spacing & look */}
+        <div className="relative px-1">
+          <input
+            type="text"
+            placeholder="Search applicants..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full py-2 pl-10 pr-3 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400"
+          />
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+        </div>
+
+        {/* Applications List — matched to old design */}
+        <div className="flex flex-col gap-4 pr-1 overflow-y-auto">
+          {loading && (
+            <p className="text-sm text-gray-500">Loading applications...</p>
+          )}
+          {error && <p className="text-sm text-red-500">Error: {error}</p>}
+          {!loading && !error && filteredApps.length === 0 && (
+            <p className="text-sm text-gray-500">No applications found</p>
+          )}
+
+          {!loading &&
+            !error &&
+            filteredApps.map((app, index) => (
+              <div
+                key={app.application_id || index}
+                className={`flex justify-between items-start rounded-lg border border-gray-200 p-3 ${
+                  app.cardBg || "bg-white"
+                }`}
+                onClick={() =>
+                  navigate(
+                    `/recruiter-application-details/${job_id}/${app.application_id}`
+                  )
+                }
+                style={{ cursor: "pointer" }} 
+              >
+                {/* Left Info */}
+                <div>
+                  <h2 className="font-semibold">{app.name}</h2>
+                  <p className="text-sm text-gray-500">{app.location}</p>
+                  <p className="text-sm text-gray-500">
+                    Total work experience: {app.experience}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Applied {app.applied}
+                  </p>
+                </div>
+
+                {/* Resume Match */}
+                <span
+                  className={`px-2 py-1 text-xs rounded-full font-medium whitespace-nowrap ${
+                    app.matchColor
+                  }`}
+                >
+                  Resume match: {app.match}
+                </span>
+              </div>
+            ))}
+        </div>
+      </div>
+
+      {/* Right Spacer */}
+      <div className="flex-grow hidden lg:block"></div>
+    </div>
+  );
+};
+
+export default ApplicationsSmall;

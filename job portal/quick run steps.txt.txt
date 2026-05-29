@@ -1,0 +1,16 @@
+to run backend simply do 
+
+npm i in the terminal inside the backend folder root 
+make sure you have xampp and xampp is running
+import the sql file in nodejobportal named database(or can change from env if you want) 
+
+npm run dev
+
+
+TO RUN FRONTEND
+similarly do 
+npm i
+then npm run dev 
+(make sure in the frontend env backend path is correct)
+
+oo

@@ -1,0 +1,119 @@
+import axios from "axios";
+
+const BASE_URL = import.meta.env.VITE_BASE_URL;
+
+export const applicationApi = {
+  applyForJob: async (job_id, applicationData, token) => {
+    try {
+      const requestData = {
+        ...applicationData,
+        job_id,
+      };
+      const response = await axios.post(`${BASE_URL}/jobpost/apply/${job_id}`, requestData, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Application error:", error);
+      if (error.response?.data) {
+        return error.response.data;
+      }
+      return {
+        success: false,
+        message: "Something went wrong. Please try again.",
+      };
+    }
+  },
+  getStudentApplications: async (token) => {
+    try {
+      const response = await axios.get(`${BASE_URL}/user/applications`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        }
+      });
+      console.log("response.data from getStudentApplications", response.data);
+      return response.data;
+    } catch (error) {
+      console.log("Error while fetching student applications", error);
+      throw error;
+    }
+  },
+  getAllApplicantsByJob: async (job_id, queryString = "", token) => {
+    const url = `${BASE_URL}/jobpost/${job_id}/allapplicant${
+      queryString ? `?${queryString}` : ""
+    }`;
+    const response = await axios.get(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  },
+  getApplicationById: async (job_id, application_id, token) => {
+      const response = await axios.get(
+        `${BASE_URL}/jobpost/${job_id}/applicant/${application_id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      return response.data;
+  },
+  scheduleInterview: async (application_id, interviewData, token) => {
+    if (!token) {
+      throw new Error("No auth token provided");
+    }
+    // Build payload exactly as backend requires
+    const payload = {
+      message: interviewData.message || "Interview is scheduled for you",
+      interview_type: interviewData.interview_type,
+      interview_date: interviewData.interview_date,
+      start_time: interviewData.start_time,
+      end_time: interviewData.end_time,
+      video_link:
+        interviewData.interview_type?.toLowerCase() === "videocall"
+          ? interviewData.video_link || "https://meet.google.com/"
+          : interviewData.video_link || "https://dummy-link.com",
+    };
+
+    const response = await axios.post(
+      `${BASE_URL}/interview-invitations/${application_id}`,
+      JSON.stringify(payload),
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    return response.data;
+  },
+  updateApplicationStatus: async (application_id, job_post_id, user_id, status, token) => {
+    try {
+      const response = await axios.post(
+        `${BASE_URL}/application/status`,
+        {
+          application_id,  // applicant’s application id
+          job_post_id,     // job post id
+          user_id,         //  recruiter id (from Redux auth.user.id)
+          status,          // new status
+        },
+        {
+          headers: {
+            Authorization: ` Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error("Error updating application status:", error);
+      throw error.response?.data || { message: "Unknown error" };
+    }
+  },
+
+};

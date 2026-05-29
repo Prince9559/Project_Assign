@@ -1,0 +1,623 @@
+import React, { useState, useEffect, useMemo } from "react";
+import { Search, MoreVertical, Eye, PauseCircle, Copy } from "lucide-react";
+import MainLayout from "../../../components/layout/MainLayout";
+import RecruiterRightSidebar from "./RecruiterRightSidebar";
+import { useNavigate, useLocation } from "react-router-dom";
+import axios from "axios";
+import { useSelector } from "react-redux";
+
+
+const BASE_URL = import.meta.env.VITE_BASE_URL;
+
+// ===== HELPER: Derive boolean flags from job object =====
+const getJobFlags = (job) => {
+  return {
+    isDraft: job.active_status === 0,
+    isActive: job.active_status === 1,
+    isInactive: job.active_status === 2,
+    isClosed: job.job_status === 3,
+
+    isFree: job.payment_type === "free",
+    isPaid: job.payment_type === "one_time" || job.payment_type === "subscription",
+    isFreePromo: job.payment_type === "free_promo",
+    isUnpaid: !job.payment_type || (job.active_status==2 && job.postTypeFilter !== "future"),
+
+    isActivePost: job.post_type === "active",
+    isFuturePost: job.post_type === "future",
+    isCollegePost: job.post_type === "college",
+
+    canViewApplications: (job.active_status === 1) &&
+      (job.payment_type === "one_time" || job.payment_type === "subscription" || job.payment_type === "free"),
+
+    canStopHiring: job.active_status === 1 &&
+      job.job_status !== 3,
+  };
+};
+
+// ===== CONFIG: Dropdown menu buttons (3-dots) =====
+const DROPDOWN_BUTTONS = [
+  {
+    id: "view_details",
+    label: "View Details",
+    icon: Eye,
+    alwaysShow: true,
+    action: (navigate, job) => {
+      if (job.active_status === 0) {
+        navigate(`/recruiter-post-job-intern-details?draftId=${job.job_id}`, { state: { job } });
+      } else {
+        navigate(`/recruiter/jobs/${job.job_id}`, { state: { job } });
+      }
+    },
+  },
+  {
+    id: "stop_hiring",
+    label: "Stop Hiring",
+    icon: PauseCircle,
+    showIf: (flags) => flags.canStopHiring,
+    variant: "danger",
+    action: async (navigate, job, token, setJobPosts) => {
+      try {
+        const response = await axios.patch(
+          `${BASE_URL}/jobpost/${job.job_id}/stop-hiring`,
+          {},
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (response.data.success) {
+          setJobPosts((prev) =>
+            prev.map((j) => (j.job_id === job.job_id ? { ...j, job_status: 3 } : j))
+          );
+          alert("Hiring stopped successfully");
+        }
+      } catch (err) {
+        console.error("Error stopping hiring:", err);
+        alert(err.response?.data?.message || "Failed to stop hiring");
+      }
+    },
+  },
+  {
+    id: "duplicate",
+    label: "Duplicate Job",
+    icon: Copy,
+    alwaysShow: true,
+    variant: "secondary",
+    action: (navigate, job) => {
+        navigate(`/recruiter-post-job-intern-details?jobId=${job.job_id}&mode=duplicate`, { state: { job, postingType: job.post_type, opportunityType: job.opportunity_type } });
+    },
+  },
+];
+
+// ===== CONFIG: Main action buttons (below job card) =====
+const MAIN_ACTION_BUTTONS = [
+  {
+    id: "edit_draft",
+    label: "Edit Draft",
+    variant: "primary",
+    showIf: (flags) => flags.isDraft,
+    action: (navigate, job) =>
+      navigate(`/recruiter-post-job-intern-details?jobId=${job.job_id}&mode=draft`, {
+        state: {
+          job_id: job.job_id,
+          post_type: job.post_type,
+          title: job.JobRole?.title || "Untitled Job",
+          collegeCount: job.collegeCount || 0,
+          postingType:job.post_type,
+          opportunityType:job.opportunity_type,
+        },
+      }),
+  },
+  {
+    id: "view_applications_free",
+    label: "View applications",
+    variant: "danger",
+    showIf: (flags) => flags.isActive && flags.isFree,
+    action: (navigate, job) =>
+      navigate(`/recruiter-view-applications/${job.job_id}`, { state: { job } }),
+  },
+  {
+    id: "upgrade_paid",
+    label: "Upgrade to Paid",
+    variant: "primary",
+    showIf: (flags) => flags.isActive && flags.isFree && flags.isActivePost,
+    action: (navigate, job) =>
+      navigate("/recruiter/checkout", {
+        state: {
+          job_id: job.job_id,
+          post_type: job.post_type,
+          title: job.JobRole?.title || "Untitled Job",
+          collegeCount: job.collegeCount || 0,
+        },
+      }),
+  },
+  {
+    id: "view_applications_paid",
+    label: "View applications",
+    variant: "danger",
+    showIf: (flags) => flags.isActive && flags.isPaid,
+    action: (navigate, job) =>
+      navigate(`/recruiter-view-applications/${job.job_id}`, { state: { job } }),
+  },
+  {
+    id: "publish_live",
+    label: "Publish Live",
+    variant: "success",
+    showIf: (flags) => flags.isInactive && flags.isUnpaid && !flags.isFuturePost && !flags.isCollegePost,
+    action: (navigate, job) => navigate(`/recruiter/job-posting/plan?jobId=${job.job_id}`),
+  },
+  {
+    id: "convert_future_to_active",
+    label: "Convert to Active Job Post",
+    variant: "success",
+    showIf: (flags) =>  flags.isFuturePost,
+    action: (navigate, job) => navigate(`/recruiter-post-job-intern-details?jobId=${job.job_id}&mode=convert`),
+  },
+  // {
+  //   id: "view_applications_other",
+  //   label: "View applications",
+  //   variant: "danger",
+  //   showIf: (flags) => !flags.isActivePost && flags.isPaid,
+  //   action: (navigate, job) =>
+  //     navigate(`/recruiter-view-applications/${job.job_id}`, { state: { job } }),
+  // },
+
+  {
+    id: "complete_payment",
+    label: "Complete Your Payment",
+    variant: "primary",
+    showIf: (flags) => flags.isCollegePost && flags.isInactive,
+    action: (navigate, job) => navigate("/recruiter/checkout/college-specific", {
+      state: {
+        job_id: job.job_id,
+        post_type: job.post_type,
+        initial_colleges: job.eligibleColleges?.map(c => c.id) || [],
+      }
+    }),
+  },
+];
+
+const TotalJobPosts = () => {
+  const [statusFilter, setStatusFilter] = useState("All"); // for active_status: 0,1,2,3
+  const [postTypeFilter, setPostTypeFilter] = useState("All"); // for post_type
+  const [search, setSearch] = useState("");
+  const [jobPosts, setJobPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+  const { token } = useSelector((state) => state.auth);
+  const [applicantCounts, setApplicantCounts] = useState({});
+  const location = useLocation();
+  const [opportunityTypeFilter, setOpportunityTypeFilter] = useState("All");
+
+  const [openDropdown, setOpenDropdown] = useState(null);
+
+  //  Filter Tabs
+  const statusTabs = [
+    { label: "All", value: "All" },
+    { label: "Draft", value: "0" },
+    { label: "Active", value: "1" },
+    { label: "Inactive", value: "2" },
+    { label: "Closed", value: "3" },
+  ];
+
+  // Post Type Tabs — map to backend `post_type` values
+  const postTypeTabs = [
+    { label: "All", value: "All" },
+    { label: "Future", value: "future" },
+    { label: "College-specific", value: "college" },
+    { label: "Active job", value: "active" },
+  ];
+
+  const opportunityTypeTabs = [
+    { label: "All", value: "All" },
+    { label: "Internship", value: "Internship" },
+    { label: "Project", value: "Project" },
+    { label: "Job", value: "Job" },
+  ];
+
+
+
+  useEffect(() => {
+    // If navigating from a specific dashboard (active/future/college), auto-set post_type filter
+    if (location.state?.post_type) {
+      setPostTypeFilter(location.state.post_type);
+    }
+  }, [location.state?.post_type]);
+
+  // Fetch applicant count
+  const fetchApplicantCount = async (jobId) => {
+    if (applicantCounts[jobId] !== undefined) return;
+    try {
+      const response = await axios.get(`${BASE_URL}/jobpost/${jobId}/applicantCount`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.data.success) {
+        setApplicantCounts((prev) => ({ ...prev, [jobId]: response.data.data || 0 }));
+      } else {
+        setApplicantCounts((prev) => ({ ...prev, [jobId]: 0 }));
+      }
+    } catch (err) {
+      console.error(`Error fetching applicant count for job ${jobId}:`, err);
+      setApplicantCounts((prev) => ({ ...prev, [jobId]: 0 }));
+    }
+  };
+
+  //  Fetch job posts with BOTH filters
+  useEffect(() => {
+    if (!token) return;
+
+    const fetchJobPosts = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const params = {};
+        if (statusFilter !== "All") params.status = statusFilter;
+
+        if (opportunityTypeFilter !== "All") {
+          params.opportunity_type = opportunityTypeFilter;
+        }
+
+
+        if (postTypeFilter !== "All") {
+          if (Array.isArray(postTypeFilter)) {
+            params.post_type = postTypeFilter.join(",");
+          } else {
+            params.post_type = postTypeFilter;
+          }
+        }
+
+        const response = await axios.get(`${BASE_URL}/company-recruiter/jobpost/list`, {
+          headers: { Authorization: `Bearer ${token}` },
+          params,
+        });
+
+        if (response.data.success) {
+          const jobs = response.data.data || [];
+          setJobPosts(jobs);
+          jobs.forEach((job) => fetchApplicantCount(job.job_id));
+        } else {
+          setError("Failed to fetch job posts");
+        }
+      } catch (err) {
+        console.error("Error fetching job posts:", err);
+        setError("Something went wrong!");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchJobPosts();
+  }, [token, statusFilter, postTypeFilter, opportunityTypeFilter]);
+
+  //  Apply search on top of fetched jobs
+  const filteredJobs = useMemo(() => {
+    if (!search) return jobPosts;
+    const term = search.toLowerCase();
+    return jobPosts.filter(
+      (job) =>
+        (job.JobRole?.title && job.JobRole.title.toLowerCase().includes(term)) ||
+        (job.skill_required_note && job.skill_required_note.toLowerCase().includes(term))
+    );
+  }, [jobPosts, search]);
+
+  // Accurate counts: based on *current jobPosts* (already filtered by status+type)
+  const tabCounts = useMemo(() => {
+    return {
+      All: jobPosts.length,
+      0: jobPosts.filter((j) => j.active_status === 0).length,
+      1: jobPosts.filter((j) => j.active_status === 1).length,
+      2: jobPosts.filter((j) => j.active_status === 2).length,
+    };
+  }, [jobPosts]);
+
+  //  Post-type tab counts (for UI only — optional display)
+  const postTypeTabCounts = useMemo(() => {
+    return {
+      All: jobPosts.length,
+      future: jobPosts.filter((j) => j.post_type === "future").length,
+      college: jobPosts.filter((j) => j.post_type === "college").length,
+      active: jobPosts.filter((j) => j.post_type === "active").length,
+    };
+  }, [jobPosts]);
+
+  return (
+    <MainLayout>
+      <div className="flex items-start justify-center min-h-screen px-2 bg-gray-100 lg:px-8">
+        <div className="flex-grow hidden lg:block"></div>
+
+        <div className="w-full px-6 py-5 mt-6 overflow-y-auto bg-white rounded-lg shadow-md">
+          {/* w-[729px] h-[800px] commented this height width */}
+          <h1 className="text-2xl font-bold">Total Job Posts</h1>
+          <p className="mb-4 text-gray-500">
+            {loading ? "Loading job posts..." : `You have ${jobPosts.length} job post(s).`}
+          </p>
+
+          {/* Search Bar */}
+          <div className="relative mb-6">
+            <input
+              type="text"
+              placeholder="Search by job role or skill..."
+              className="w-full py-2 pl-4 pr-10 border border-gray-300 rounded-full shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <Search className="absolute text-gray-400 -translate-y-1/2 right-3 top-1/2" size={20} />
+          </div>
+
+          {error && <p className="mb-4 text-red-500">{error}</p>}
+
+          {/*  Status Filter Tabs (unchanged logic, but accurate counts) */}
+          <div className="flex flex-wrap hidden gap-3 mb-4 text-sm">
+            {statusTabs.map((tab) => {
+              const count = tab.value === "All" ? tabCounts.All : tabCounts[tab.value] || 0;
+              const isActive = statusFilter === (tab.value === "All" ? "All" : tab.value);
+              return (
+                <button
+                  key={tab.value}
+                  onClick={() => setStatusFilter(tab.value === "All" ? "All" : tab.value)}
+                  className={`px-3 py-1 rounded-full border whitespace-nowrap ${isActive
+                    ? "bg-blue-100 text-blue-600 border-blue-400"
+                    : "bg-gray-100 text-gray-500 border-gray-200"
+                    }`}
+                >
+                  {tab.label} ({count})
+                </button>
+              );
+            })}
+          </div>
+
+          {/*  NEW: Post Type Filter Tabs */}
+          <div className="flex flex-wrap hidden gap-3 mb-6 text-sm">
+            {postTypeTabs.map((tab) => {
+              const tabKey = Array.isArray(tab.value)
+                ? "active_job"
+                : tab.value === "All"
+                  ? "All"
+                  : tab.value;
+              const count = postTypeTabCounts[tabKey] || 0;
+              const isActive = Array.isArray(tab.value)
+                ? Array.isArray(postTypeFilter) && JSON.stringify(postTypeFilter) === JSON.stringify(tab.value)
+                : postTypeFilter === tab.value;
+              return (
+                <button
+                  key={tab.value}
+                  onClick={() =>
+                    setPostTypeFilter(Array.isArray(tab.value) ? tab.value : tab.value)
+                  }
+                  className={`px-3 py-1 rounded-full border whitespace-nowrap ${isActive
+                    ? "bg-green-100 text-green-700 border-green-400"
+                    : "bg-gray-100 text-gray-500 border-gray-200"
+                    }`}
+                >
+                  {tab.label} ({count})
+                </button>
+              );
+            })}
+          </div>
+
+
+
+          <div className="flex flex-wrap gap-3 mb-6 text-sm">
+            {opportunityTypeTabs.map((tab) => {
+              const count = tab.value === "All"
+                ? jobPosts.length
+                : jobPosts.filter((j) => j.opportunity_type === tab.value).length;
+
+              const isActive = opportunityTypeFilter === tab.value;
+
+              return (
+                <button
+                  key={tab.value}
+                  onClick={() => setOpportunityTypeFilter(tab.value)}
+                  className={`px-3 py-1 rounded-full border whitespace-nowrap ${isActive
+                    ? "bg-purple-100 text-purple-700 border-purple-400"
+                    : "bg-gray-100 text-gray-500 border-gray-200"
+                    }`}
+                >
+                  {tab.label} ({count})
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Job List */}
+          <div className="flex flex-col gap-5">
+            {loading ? (
+              <p>Loading jobs...</p>
+            ) : filteredJobs.length === 0 ? (
+              <div className="py-10 text-center">
+                <p className="mb-4 text-lg text-gray-500">
+                  {search ? "No job posts match your search." : "No job posts found yet."}
+                </p>
+
+                {/* Only show 'Post Now' button if not searching */}
+                {!search && (
+                  <button
+                    onClick={() => navigate("/recruiter-post-opportunity-selector")}
+                    className="inline-flex items-center gap-2 px-6 py-2 font-medium text-white transition-transform transform bg-blue-600 rounded-full shadow-md hover:bg-blue-700 hover:scale-105"
+                  >
+                    <span>➕</span> Post Your First Job
+                  </button>
+                )}
+              </div>
+            ) : (
+              filteredJobs.map((job) => (
+                <div
+                  key={job.job_id}
+                  className="flex flex-col gap-3 p-4 bg-white border border-gray-200 rounded-lg shadow-sm"
+                >
+                  <div className="flex items-start justify-between">
+                    {/* Job Info */}
+                    <div className="flex-grow">
+                      <h2 className="font-semibold">{job.JobRole?.title || "Untitled Job"}</h2>
+
+                      <div className="mt-1 space-y-1">
+                        {job.internship_start_date && job.active_status !== 0 ? (
+                          <p className="text-sm text-blue-500">Posted on  {job.internship_start_date}.</p>
+                        ) : !job.internship_start_date ? (
+                          <p className="text-sm text-gray-400">No start date</p>
+                        ) : null}
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          {job.opportunity_type && (
+                            <span className="px-2 py-1 text-xs text-blue-700 bg-blue-100 rounded">
+                              {job.opportunity_type}
+                            </span>
+                          )}
+                          {/* {job.job_type && (
+                            <span className="px-2 py-1 text-xs text-gray-700 bg-gray-100 rounded">
+                              {job.job_type}
+                            </span>
+                          )} */}
+                          {job.post_type && (
+                            <span className="px-2 py-1 text-xs text-gray-700 bg-yellow-100 rounded">
+                              {job.post_type}
+                            </span>
+                          )}
+
+                          {/* hide stipend  */}
+                          {/* {job.stipendText && (
+                            <span className="px-2 py-1 text-xs text-green-700 bg-green-100 rounded">
+                              {job.stipendText}
+                            </span>
+                          )} */}
+                          {job.collegeCount > 0 && (
+                            <span className="px-2 py-1 text-xs text-purple-700 bg-purple-100 rounded">
+                              🏫 {job.collegeCount} {job.collegeCount === 1 ? "college" : "colleges"}
+                            </span>
+                          )}
+                          {job.payment_type && (
+                            <span
+                              className={`px-2 py-1 text-xs rounded ${job.payment_type === "free"
+                                ? "bg-gray-200 text-gray-700"
+                                : job.payment_type === "subscription"
+                                  ? "bg-blue-200 text-blue-800"
+                                  : "bg-orange-200 text-orange-800"
+                                }`}
+                            >
+                              {job.payment_type === "free"
+                                ? "🎟️ Free"
+                                : job.payment_type === "subscription"
+                                  ? "💳 Subscription"
+                                  : "🛒 One-time"}
+                            </span>
+                          )}
+                          {/*  New: job_expires */}
+                          {job.job_expires && (
+                            <span className="px-2 py-1 text-xs text-orange-700 bg-orange-100 rounded">
+                              {/*  Expires: {job.job_expires} */}
+                              📅 Expires in 30 days from posted date
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* View Applications / Upgrade / Edit Draft / Publish */}
+                      <div className="mt-2 space-x-2 space-y-2">
+                        {MAIN_ACTION_BUTTONS.filter((btn) => {
+                          const flags = getJobFlags(job);
+                          return btn.showIf(flags);
+                        }).map((btn) => {
+                          // Handle dynamic label for applicant count
+                          const label = btn.label.includes("applications")
+                            ? `View applications (${applicantCounts[job.job_id] !== undefined ? applicantCounts[job.job_id] : "..."})`
+                            : btn.label;
+
+                          return (
+                            <button
+                              key={btn.id}
+                              className={`px-4 py-1 text-sm transition rounded-md ${btn.variant === "primary"
+                                ? "bg-blue-500 text-white hover:bg-blue-600"
+                                : btn.variant === "danger"
+                                  ? "bg-red-500 text-white hover:bg-red-600"
+                                  : btn.variant === "success"
+                                    ? "bg-green-500 text-white hover:bg-green-600"
+                                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                                }`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                btn.action(navigate, job);
+                              }}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/*  Replace status badge with "View Details" button */}
+                    {/* Dropdown Menu (3-dots) */}
+                    <div className="relative">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenDropdown(openDropdown === job.job_id ? null : job.job_id);
+                        }}
+                        className="p-2 text-gray-500 transition-colors rounded-full hover:text-gray-700 hover:bg-gray-100 focus:outline-none"
+                        aria-label="Job actions"
+                        aria-expanded={openDropdown === job.job_id}
+                      >
+                        <MoreVertical size={20} />
+                      </button>
+
+                      {openDropdown === job.job_id && (
+                        <>
+                          {/* Backdrop for outside click */}
+                          <div
+                            className="fixed inset-0 z-30"
+                            onClick={() => setOpenDropdown(null)}
+                            aria-hidden="true"
+                          />
+                          {/* Dropdown Menu */}
+                          <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-40 py-1 min-w-[180px]">
+                            {DROPDOWN_BUTTONS.filter((btn) => {
+                              if (btn.alwaysShow) return true;
+                              if (btn.showIf) {
+                                const flags = getJobFlags(job);
+                                return btn.showIf(flags);
+                              }
+                              return false;
+                            }).map((btn) => {
+                              const Icon = btn.icon;
+                              return (
+                                <button
+                                  key={btn.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenDropdown(null);
+                                    btn.action(navigate, job, token, setJobPosts);
+                                  }}
+                                  className={`w-full flex items-center gap-2 px-4 py-2 text-sm text-left hover:bg-gray-50 transition-colors ${btn.variant === "danger"
+                                      ? "text-red-600 hover:bg-red-50"
+                                      : btn.variant === "secondary"
+                                        ? "text-gray-600"
+                                        : "text-gray-700"
+                                    }`}
+                                >
+                                  {Icon && <Icon size={16} />}
+                                  <span>{btn.label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* <aside className="hidden lg:block w-[425px] max-w-[425px] p-2 sticky top-4 h-fit ml-4">
+          <RecruiterRightSidebar />
+        </aside> */}
+
+        <div className="flex-grow hidden lg:block"></div>
+      </div>
+    </MainLayout>
+  );
+};
+
+export default TotalJobPosts;

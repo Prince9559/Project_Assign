@@ -1,0 +1,1 @@
+Table 'nodejobportal.company_university_tieups' doesn't exist
